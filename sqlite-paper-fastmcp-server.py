@@ -550,34 +550,41 @@ def add_sources(
     search_results = search_sources(search_inputs, DB_PATH)
     
     # Process results and prepare new sources
-    results = []
+    results = [None] * len(sources)
     sources_to_add = []
     notes_to_add = []
     
-    for (title, type_, id_type, id_value, initial_note), (uuid_str, matches) in zip(sources, search_results):
+    for input_index, ((title, type_, id_type, id_value, initial_note), (uuid_str, matches)) in enumerate(zip(sources, search_results)):
         if uuid_str:
             # Source already exists - get its details
             try:
                 existing_source = get_sources_details(uuid_str, DB_PATH)[0]
-                results.append({
+                results[input_index] = {
                     "status": "error",
                     "message": "Source already exists",
                     "existing_source": existing_source
-                })
+                }
             except Exception as e:
-                results.append({
+                results[input_index] = {
                     "status": "error",
                     "message": f"Error retrieving existing source: {str(e)}"
-                })
+                }
             continue
             
         if matches:
             # Potential duplicates found
-            results.append({
+            results[input_index] = {
                 "status": "error",
                 "message": "Potential duplicates found. Please verify or use add_identifier if these are the same source.",
                 "matches": matches
-            })
+            }
+            continue
+
+        if initial_note and not all(k in initial_note for k in ('title', 'content')):
+            results[input_index] = {
+                "status": "error",
+                "message": f"Invalid initial note format for source '{title}'"
+            }
             continue
         
         # New source to add - using UUID module explicitly
@@ -585,6 +592,7 @@ def add_sources(
         identifiers = {id_type: id_value}
         
         sources_to_add.append({
+            'input_index': input_index,
             'id': new_id,
             'title': title,
             'type': type_,
@@ -592,24 +600,18 @@ def add_sources(
         })
         
         if initial_note:
-            if not all(k in initial_note for k in ('title', 'content')):
-                results.append({
-                    "status": "error",
-                    "message": f"Invalid initial note format for source '{title}'"
-                })
-                continue
-                
             notes_to_add.append({
+                'input_index': input_index,
                 'source_id': new_id,
                 'note_title': initial_note['title'],
                 'content': initial_note['content']
             })
         
         # Add placeholder for success result to be filled after insertion
-        results.append({
+        results[input_index] = {
             "status": "pending",
             "source_id": new_id
-        })
+        }
     
     # If we have any sources to add, do it in a single transaction
     if sources_to_add:
@@ -636,20 +638,20 @@ def add_sources(
                 added_sources = get_sources_details(added_source_ids, DB_PATH)
                 
                 # Update results with full source details
-                for i, result in enumerate(results):
-                    if result.get("status") == "pending":
-                        source_id = result["source_id"]
-                        source_details = next(s for s in added_sources if s['id'] == source_id)
-                        results[i] = {
-                            "status": "success",
-                            "source": source_details
-                        }
+                details_by_id = {source['id']: source for source in added_sources}
+                for source in sources_to_add:
+                    input_index = source['input_index']
+                    source_id = source['id']
+                    results[input_index] = {
+                        "status": "success",
+                        "source": details_by_id[source_id]
+                    }
                 
             except sqlite3.Error as e:
                 conn.rollback()
                 raise ValueError(f"Database error: {str(e)}")
     
-    return results
+    return [result for result in results if result is not None]
 
 @mcp.tool()
 def add_notes(
@@ -689,35 +691,36 @@ def add_notes(
     search_results = search_sources(search_inputs, DB_PATH)
     
     # Process results and prepare notes
-    results = []
+    results = [None] * len(source_notes)
     notes_to_add = []
     source_ids = []
     
-    for (title, type_, id_type, id_value, note_title, note_content), (uuid_str, matches) in zip(source_notes, search_results):
+    for input_index, ((title, type_, id_type, id_value, note_title, note_content), (uuid_str, matches)) in enumerate(zip(source_notes, search_results)):
         if not uuid_str:
             if matches:
-                results.append({
+                results[input_index] = {
                     "status": "error",
                     "message": "Multiple potential matches found. Please verify the source.",
                     "matches": matches
-                })
+                }
             else:
-                results.append({
+                results[input_index] = {
                     "status": "error",
                     "message": "Source not found"
-                })
+                }
             continue
         
         notes_to_add.append({
+            'input_index': input_index,
             'source_id': uuid_str,
             'note_title': note_title,
             'content': note_content
         })
         source_ids.append(uuid_str)
-        results.append({
+        results[input_index] = {
             "status": "pending",
             "source_id": uuid_str
-        })
+        }
     
     if notes_to_add:
         with SQLiteConnection(DB_PATH) as conn:
@@ -743,9 +746,10 @@ def add_notes(
                 
                 # Filter out notes that already exist
                 filtered_notes = []
-                for i, note in enumerate(notes_to_add):
+                for note in notes_to_add:
+                    input_index = note['input_index']
                     if (note['source_id'], note['note_title']) in existing_notes:
-                        results[i] = {
+                        results[input_index] = {
                             "status": "error",
                             "message": "Note with this title already exists for this source"
                         }
@@ -763,22 +767,22 @@ def add_notes(
                     
                     # Get updated source details
                     source_details = get_sources_details(list(set(source_ids)), DB_PATH)
+                    source_details_by_id = {source['id']: source for source in source_details}
                     
                     # Update success results
-                    for i, result in enumerate(results):
-                        if result.get("status") == "pending":
-                            source_id = result["source_id"]
-                            source_detail = next(s for s in source_details if s['id'] == source_id)
-                            results[i] = {
-                                "status": "success",
-                                "source": source_detail
-                            }
+                    for note in filtered_notes:
+                        input_index = note['input_index']
+                        source_id = note['source_id']
+                        results[input_index] = {
+                            "status": "success",
+                            "source": source_details_by_id[source_id]
+                        }
                 
             except sqlite3.Error as e:
                 conn.rollback()
                 raise ValueError(f"Database error: {str(e)}")
     
-    return results
+    return [result for result in results if result is not None]
 
 @mcp.tool()
 def update_status(
@@ -1084,36 +1088,37 @@ def link_to_entities(
     search_results = search_sources(search_inputs, DB_PATH)
     
     # Process results and prepare links
-    results = []
+    results = [None] * len(source_entity_links)
     links_to_add = []
     source_ids = []
     
-    for (title, type_, id_type, id_value, entity_name, relation_type, notes), (uuid_str, matches) in zip(source_entity_links, search_results):
+    for input_index, ((title, type_, id_type, id_value, entity_name, relation_type, notes), (uuid_str, matches)) in enumerate(zip(source_entity_links, search_results)):
         if not uuid_str:
             if matches:
-                results.append({
+                results[input_index] = {
                     "status": "error",
                     "message": "Multiple potential matches found. Please verify the source.",
                     "matches": matches
-                })
+                }
             else:
-                results.append({
+                results[input_index] = {
                     "status": "error",
                     "message": "Source not found"
-                })
+                }
             continue
         
         links_to_add.append({
+            'input_index': input_index,
             'source_id': uuid_str,
             'entity_name': entity_name,
             'relation_type': relation_type,
             'notes': notes
         })
         source_ids.append(uuid_str)
-        results.append({
+        results[input_index] = {
             "status": "pending",
             "source_id": uuid_str
-        })
+        }
     
     if links_to_add:
         with SQLiteConnection(DB_PATH) as conn:
@@ -1138,9 +1143,10 @@ def link_to_entities(
                 
                 # Filter out existing links
                 filtered_links = []
-                for i, link in enumerate(links_to_add):
+                for link in links_to_add:
+                    input_index = link['input_index']
                     if (link['source_id'], link['entity_name']) in existing_links:
-                        results[i] = {
+                        results[input_index] = {
                             "status": "error",
                             "message": "Link already exists between this source and entity"
                         }
@@ -1159,22 +1165,22 @@ def link_to_entities(
                     
                     # Get updated source details
                     source_details = get_sources_details(list(set(source_ids)), DB_PATH)
+                    source_details_by_id = {source['id']: source for source in source_details}
                     
                     # Update success results
-                    for i, result in enumerate(results):
-                        if result.get("status") == "pending":
-                            source_id = result["source_id"]
-                            source_detail = next(s for s in source_details if s['id'] == source_id)
-                            results[i] = {
-                                "status": "success",
-                                "source": source_detail
-                            }
+                    for link in filtered_links:
+                        input_index = link['input_index']
+                        source_id = link['source_id']
+                        results[input_index] = {
+                            "status": "success",
+                            "source": source_details_by_id[source_id]
+                        }
                 
             except sqlite3.Error as e:
                 conn.rollback()
                 raise ValueError(f"Database error: {str(e)}")
     
-    return results
+    return [result for result in results if result is not None]
 
 @mcp.tool()
 def get_source_entities(
@@ -1308,36 +1314,37 @@ def update_entity_links(
     search_results = search_sources(search_inputs, DB_PATH)
     
     # Process results and prepare updates
-    results = []
+    results = [None] * len(source_entity_updates)
     updates_to_make = []
     source_ids = []
     
-    for (title, type_, id_type, id_value, entity_name, relation_type, notes), (uuid_str, matches) in zip(source_entity_updates, search_results):
+    for input_index, ((title, type_, id_type, id_value, entity_name, relation_type, notes), (uuid_str, matches)) in enumerate(zip(source_entity_updates, search_results)):
         if not uuid_str:
             if matches:
-                results.append({
+                results[input_index] = {
                     "status": "error",
                     "message": "Multiple potential matches found. Please verify the source.",
                     "matches": matches
-                })
+                }
             else:
-                results.append({
+                results[input_index] = {
                     "status": "error",
                     "message": "Source not found"
-                })
+                }
             continue
         
         updates_to_make.append({
+            'input_index': input_index,
             'source_id': uuid_str,
             'entity_name': entity_name,
             'relation_type': relation_type,
             'notes': notes
         })
         source_ids.append(uuid_str)
-        results.append({
+        results[input_index] = {
             "status": "pending",
             "source_id": uuid_str
-        })
+        }
     
     if updates_to_make:
         with SQLiteConnection(DB_PATH) as conn:
@@ -1365,11 +1372,7 @@ def update_entity_links(
                     
                     cursor.execute(query, params)
                     if cursor.rowcount == 0:
-                        # Find index of this update in results
-                        idx = next(i for i, r in enumerate(results) 
-                                 if r.get("status") == "pending" and 
-                                 r.get("source_id") == update['source_id'])
-                        results[idx] = {
+                        results[update['input_index']] = {
                             "status": "error",
                             "message": "No link found between this source and entity"
                         }
@@ -1378,22 +1381,23 @@ def update_entity_links(
                 
                 # Get updated source details
                 source_details = get_sources_details(list(set(source_ids)), DB_PATH)
+                source_details_by_id = {source['id']: source for source in source_details}
                 
                 # Update success results
-                for i, result in enumerate(results):
-                    if result.get("status") == "pending":
-                        source_id = result["source_id"]
-                        source_detail = next(s for s in source_details if s['id'] == source_id)
-                        results[i] = {
+                for update in updates_to_make:
+                    input_index = update['input_index']
+                    if results[input_index].get("status") == "pending":
+                        source_id = update["source_id"]
+                        results[input_index] = {
                             "status": "success",
-                            "source": source_detail
+                            "source": source_details_by_id[source_id]
                         }
                 
             except sqlite3.Error as e:
                 conn.rollback()
                 raise ValueError(f"Database error: {str(e)}")
     
-    return results
+    return [result for result in results if result is not None]
 
 @mcp.tool()
 def remove_entity_links(
@@ -1434,98 +1438,97 @@ def remove_entity_links(
     search_results = search_sources(search_inputs, DB_PATH)
     
     # Process results and prepare deletions
-    results = []
+    results = [None] * len(source_entity_pairs)
     links_to_remove = []
     source_ids = []
     
-    for (title, type_, id_type, id_value, entity_name), (uuid_str, matches) in zip(source_entity_pairs, search_results):
+    for input_index, ((title, type_, id_type, id_value, entity_name), (uuid_str, matches)) in enumerate(zip(source_entity_pairs, search_results)):
         if not uuid_str:
             if matches:
-                results.append({
+                results[input_index] = {
                     "status": "error",
                     "message": "Multiple potential matches found. Please verify the source.",
                     "matches": matches
-                })
+                }
             else:
-                results.append({
+                results[input_index] = {
                     "status": "error",
                     "message": "Source not found"
-                })
+                }
             continue
         
         links_to_remove.append({
+            'input_index': input_index,
             'source_id': uuid_str,
             'entity_name': entity_name
         })
         source_ids.append(uuid_str)
-        results.append({
+        results[input_index] = {
             "status": "pending",
             "source_id": uuid_str
-        })
+        }
     
     if links_to_remove:
         with SQLiteConnection(DB_PATH) as conn:
             cursor = conn.cursor()
             try:
-                # Remove all links in one query
                 placeholders = ','.join('(?,?)' for _ in links_to_remove)
-                cursor.execute(f"""
-                    DELETE FROM source_entity_links
-                    WHERE (source_id, entity_name) IN ({placeholders})
-                """, [
-                    val for link in links_to_remove 
+                pair_params = [
+                    val for link in links_to_remove
                     for val in (link['source_id'], link['entity_name'])
-                ])
-                
-                # Track which links were actually removed
-                removed_count = cursor.rowcount
-                if removed_count < len(links_to_remove):
-                    # Some links weren't found - need to check which ones
-                    cursor.execute(f"""
-                        SELECT source_id, entity_name
-                        FROM source_entity_links
-                        WHERE (source_id, entity_name) IN ({placeholders})
-                    """, [
-                        val for link in links_to_remove 
+                ]
+                cursor.execute(f"""
+                    SELECT source_id, entity_name
+                    FROM source_entity_links
+                    WHERE (source_id, entity_name) IN ({placeholders})
+                """, pair_params)
+                existing_links = {
+                    (row['source_id'], row['entity_name'])
+                    for row in cursor.fetchall()
+                }
+
+                removable_links = []
+                for link in links_to_remove:
+                    if (link['source_id'], link['entity_name']) in existing_links:
+                        removable_links.append(link)
+                    else:
+                        results[link['input_index']] = {
+                            "status": "error",
+                            "message": "No link found between this source and entity"
+                        }
+
+                if removable_links:
+                    delete_params = [
+                        val for link in removable_links
                         for val in (link['source_id'], link['entity_name'])
-                    ])
-                    
-                    existing_links = {
-                        (row['source_id'], row['entity_name'])
-                        for row in cursor.fetchall()
-                    }
-                    
-                    # Update results for non-existent links
-                    for i, link in enumerate(links_to_remove):
-                        if (link['source_id'], link['entity_name']) not in existing_links:
-                            idx = next(j for j, r in enumerate(results) 
-                                     if r.get("status") == "pending" and 
-                                     r.get("source_id") == link['source_id'])
-                            results[idx] = {
-                                "status": "error",
-                                "message": "No link found between this source and entity"
-                            }
+                    ]
+                    delete_placeholders = ','.join('(?,?)' for _ in removable_links)
+                    cursor.execute(f"""
+                        DELETE FROM source_entity_links
+                        WHERE (source_id, entity_name) IN ({delete_placeholders})
+                    """, delete_params)
                 
                 conn.commit()
                 
                 # Get updated source details
                 source_details = get_sources_details(list(set(source_ids)), DB_PATH)
+                source_details_by_id = {source['id']: source for source in source_details}
                 
                 # Update success results
-                for i, result in enumerate(results):
-                    if result.get("status") == "pending":
-                        source_id = result["source_id"]
-                        source_detail = next(s for s in source_details if s['id'] == source_id)
-                        results[i] = {
+                for link in links_to_remove:
+                    input_index = link['input_index']
+                    if results[input_index].get("status") == "pending":
+                        source_id = link["source_id"]
+                        results[input_index] = {
                             "status": "success",
-                            "source": source_detail
+                            "source": source_details_by_id[source_id]
                         }
                 
             except sqlite3.Error as e:
                 conn.rollback()
                 raise ValueError(f"Database error: {str(e)}")
     
-    return results
+    return [result for result in results if result is not None]
 
 @mcp.tool()
 def get_entity_sources(
