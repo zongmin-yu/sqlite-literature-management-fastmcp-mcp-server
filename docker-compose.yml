@@ -1,0 +1,12 @@
+services:
+  sqlite-lit-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sqlite-literature-management-fastmcp-mcp-server:latest
+    environment:
+      SQLITE_DB_PATH: /data/sources.db
+    volumes:
+      - ./data:/data
+    stdin_open: true
+    tty: true

@@ -31,6 +31,39 @@ fastmcp install sqlite-paper-fastmcp-server.py --name "Source Manager" -e SQLITE
 
 3. Optional: use the checked-in demo fixture at `examples/sources.db`.
 
+## Docker
+
+This server can be packaged as a containerized stdio MCP server.
+
+Build the image:
+
+```bash
+docker build -t sqlite-lit-mcp .
+```
+
+Run it with a persistent SQLite volume:
+
+```bash
+mkdir -p data
+docker run --rm -i \
+  -e SQLITE_DB_PATH=/data/sources.db \
+  -v "$(pwd)/data:/data" \
+  sqlite-lit-mcp
+```
+
+Notes:
+
+- The image defaults `SQLITE_DB_PATH` to `/data/sources.db`.
+- If the database file does not exist, the container initializes it from `create_sources_db.sql`.
+- If you are mounting an older database, apply `migrations/2026-03-09__normalize-identifiers.sql` before starting the server.
+- This repo runs as a stdio MCP server, so there is no HTTP port to expose by default.
+
+With Docker Compose:
+
+```bash
+docker compose run --rm sqlite-lit-mcp
+```
+
 ## Current Tool Surface
 
 Implemented tools:
