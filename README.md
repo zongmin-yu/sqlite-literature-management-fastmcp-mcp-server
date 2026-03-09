@@ -1,21 +1,23 @@
 # Universal Source Management System
 
-A lightweight FastMCP server for managing literature and related notes in a local SQLite database.
+A lightweight FastMCP server for managing literature, notes, entity links, and reading-list resources in a local SQLite database.
 
 ## Current Scope
 
-This repository currently provides:
+This repository provides:
 
 - Local SQLite-backed source management
 - Notes attached to sources
 - Entity links between sources and named concepts
 - Read-only database inspection tools
+- MCP resources for source lookup and reading lists
+- Normalized identifier storage with a transitional JSON cache
 
-It does not currently implement MCP resources, MCP Memory Server integration, or a memory graph backend.
+It does not integrate with MCP Memory Server or an external memory graph.
 
 ## Quick Start
 
-1. Create a new SQLite database with the checked-in schema:
+1. Create a database from the current schema:
 
 ```bash
 sqlite3 sources.db < create_sources_db.sql
@@ -26,6 +28,8 @@ sqlite3 sources.db < create_sources_db.sql
 ```bash
 fastmcp install sqlite-paper-fastmcp-server.py --name "Source Manager" -e SQLITE_DB_PATH=/path/to/sources.db
 ```
+
+3. Optional: use the checked-in demo fixture at `examples/sources.db`.
 
 ## Current Tool Surface
 
@@ -49,43 +53,73 @@ Implemented tools:
 
 Implemented resources:
 
-- None yet
+- `source://<id>`
+- `source://by-identifier/<type>/<value>`
+- `reading-list://unread`
+- `reading-list://reading`
+- `entity://<entity_name>`
 
-## Schema
+## Schema Notes
 
-The current SQLite schema uses three tables:
+The current schema centers on four tables:
 
-```sql
-CREATE TABLE sources (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    type TEXT CHECK(type IN ('paper', 'webpage', 'book', 'video', 'blog')) NOT NULL,
-    identifiers TEXT NOT NULL,
-    status TEXT CHECK(status IN ('unread', 'reading', 'completed', 'archived')) DEFAULT 'unread'
-);
+- `sources`
+- `source_identifiers`
+- `source_notes`
+- `source_entity_links`
 
-CREATE TABLE source_notes (
-    source_id TEXT REFERENCES sources(id),
-    note_title TEXT NOT NULL,
-    content TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (source_id, note_title)
-);
+`sources.identifiers` is still kept as a transitional JSON cache, but identifier lookups now use `source_identifiers`.
 
-CREATE TABLE source_entity_links (
-    source_id TEXT REFERENCES sources(id),
-    entity_name TEXT,
-    relation_type TEXT CHECK(relation_type IN ('discusses', 'introduces', 'extends', 'evaluates', 'applies', 'critiques')),
-    notes TEXT,
-    PRIMARY KEY (source_id, entity_name)
-);
+Supported identifier types:
+
+- `semantic_scholar`
+- `doi`
+- `arxiv`
+- `openalex`
+- `pmid`
+- `isbn`
+- `url`
+
+Lightweight provenance fields live on `sources`:
+
+- `provider`
+- `discovered_via`
+- `discovered_at`
+
+The schema now uses `PRAGMA user_version = 2`.
+
+## Migration
+
+If you have an older database, apply:
+
+```bash
+sqlite3 /path/to/sources.db < migrations/2026-03-09__normalize-identifiers.sql
 ```
 
-`sources.identifiers` is currently stored as a JSON string in SQLite text.
+That migration:
 
-## Usage Examples
+- adds `source_identifiers`
+- backfills identifier rows from the legacy JSON column
+- adds provenance fields
+- updates `PRAGMA user_version` to `2`
 
-Add sources in batch form:
+The server checks `PRAGMA user_version` on connection and will reject older databases until they are migrated.
+
+## Package Layout
+
+The implementation is organized under `sqlite_lit_server/`:
+
+- `app.py` creates the FastMCP instance and registers tools/resources
+- `db.py` owns connection setup and schema-version checks
+- `repository.py` keeps SQL-heavy lookup logic close to the data layer
+- `tools_admin.py`, `tools_sources.py`, and `tools_entities.py` hold the MCP tools
+- `resources.py` defines the MCP resources
+
+`sqlite-paper-fastmcp-server.py` remains as a thin compatibility shim.
+
+## Example Usage
+
+Add a source:
 
 ```python
 add_sources([
@@ -102,7 +136,7 @@ add_sources([
 ])
 ```
 
-Add an additional identifier:
+Add another identifier:
 
 ```python
 add_identifiers([
@@ -117,41 +151,8 @@ add_identifiers([
 ])
 ```
 
-Add notes:
+Read a source resource:
 
-```python
-add_notes([
-    (
-        "Attention Is All You Need",
-        "paper",
-        "arxiv",
-        "1706.03762",
-        "Implementation details",
-        "The paper describes the architecture...",
-    ),
-])
-```
-
-Link a source to an entity:
-
-```python
-link_to_entities([
-    (
-        "Attention Is All You Need",
-        "paper",
-        "arxiv",
-        "1706.03762",
-        "transformer",
-        "introduces",
-        "First paper to introduce the transformer architecture",
-    ),
-])
-```
-
-Query sources by entity:
-
-```python
-get_entity_sources([
-    ("transformer", "paper", "discusses"),
-])
+```text
+source://by-identifier/arxiv/1706.03762
 ```
