@@ -1,0 +1,16 @@
+[project]
+name = "sqlite-literature-management-fastmcp-mcp-server"
+version = "0.1.0"
+description = "SQLite-backed literature management server for FastMCP"
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
