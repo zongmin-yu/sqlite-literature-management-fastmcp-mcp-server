@@ -1,72 +1,79 @@
-[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/yuzongmin-sqlite-literature-management-fastmcp-mcp-server-badge.png)](https://mseep.ai/app/yuzongmin-sqlite-literature-management-fastmcp-mcp-server)
-
 # Universal Source Management System
 
-A flexible system for managing various types of sources (papers, books, webpages, etc.) and integrating them with knowledge graphs.
+A lightweight FastMCP server for managing literature and related notes in a local SQLite database.
 
-## Features
+## Current Scope
 
-### Core Features
+This repository currently provides:
 
-- Universal source identification with internal UUID system
-- Support for multiple source types (papers, webpages, books, videos, blogs)
-- Multiple identifier support per source (arxiv, DOI, semantic scholar, ISBN, URL)
-- Structured note-taking with titles and content
-- Status tracking (unread, reading, completed, archived)
+- Local SQLite-backed source management
+- Notes attached to sources
+- Entity links between sources and named concepts
+- Read-only database inspection tools
 
-### Entity Integration
-
-- Link sources to knowledge graph entities
-- Track relationships between sources and entities
-- Flexible relation types (discusses, introduces, extends, etc.)
-- Integration with memory graph
-
-## Prerequisites
-
-This system integrates with the [MCP Memory Server](https://github.com/modelcontextprotocol/servers/tree/main/src/memory) for persistent knowledge graph storage.
+It does not currently implement MCP resources, MCP Memory Server integration, or a memory graph backend.
 
 ## Quick Start
 
-1. Create a new SQLite database with our schema:
+1. Create a new SQLite database with the checked-in schema:
 
 ```bash
-# Create a new database
 sqlite3 sources.db < create_sources_db.sql
 ```
 
-2. Install the source management server:
+2. Install the FastMCP server with your database path:
 
 ```bash
-# Install for Claude Desktop with your database path
-fastmcp install source-manager-server.py --name "Source Manager" -e SQLITE_DB_PATH=/path/to/sources.db
+fastmcp install sqlite-paper-fastmcp-server.py --name "Source Manager" -e SQLITE_DB_PATH=/path/to/sources.db
 ```
+
+## Current Tool Surface
+
+Implemented tools:
+
+- `read_query`
+- `list_tables`
+- `describe_table`
+- `get_table_stats`
+- `get_database_info`
+- `vacuum_database`
+- `add_sources`
+- `add_notes`
+- `update_status`
+- `add_identifiers`
+- `link_to_entities`
+- `get_source_entities`
+- `update_entity_links`
+- `remove_entity_links`
+- `get_entity_sources`
+
+Implemented resources:
+
+- None yet
 
 ## Schema
 
-### Core Tables
+The current SQLite schema uses three tables:
 
 ```sql
--- Sources table
 CREATE TABLE sources (
-    id UUID PRIMARY KEY,
+    id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     type TEXT CHECK(type IN ('paper', 'webpage', 'book', 'video', 'blog')) NOT NULL,
-    identifiers JSONB NOT NULL,
+    identifiers TEXT NOT NULL,
     status TEXT CHECK(status IN ('unread', 'reading', 'completed', 'archived')) DEFAULT 'unread'
 );
 
--- Source notes
 CREATE TABLE source_notes (
-    source_id UUID REFERENCES sources(id),
+    source_id TEXT REFERENCES sources(id),
     note_title TEXT NOT NULL,
     content TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (source_id, note_title)
 );
 
--- Entity links
 CREATE TABLE source_entity_links (
-    source_id UUID REFERENCES sources(id),
+    source_id TEXT REFERENCES sources(id),
     entity_name TEXT,
     relation_type TEXT CHECK(relation_type IN ('discusses', 'introduces', 'extends', 'evaluates', 'applies', 'critiques')),
     notes TEXT,
@@ -74,120 +81,77 @@ CREATE TABLE source_entity_links (
 );
 ```
 
+`sources.identifiers` is currently stored as a JSON string in SQLite text.
+
 ## Usage Examples
 
-### 1. Managing Sources
-
-Add a paper with multiple identifiers:
+Add sources in batch form:
 
 ```python
-add_source(
-    title="Attention Is All You Need",
-    type="paper",
-    identifier_type="arxiv",
-    identifier_value="1706.03762",
-    initial_note={
-        "title": "Initial thoughts",
-        "content": "Groundbreaking paper introducing transformers..."
-    }
-)
-
-# Add another identifier to the same paper
-add_identifier(
-    title="Attention Is All You Need",
-    type="paper",
-    current_identifier_type="arxiv",
-    current_identifier_value="1706.03762",
-    new_identifier_type="semantic_scholar",
-    new_identifier_value="204e3073870fae3d05bcbc2f6a8e263d9b72e776"
-)
+add_sources([
+    (
+        "Attention Is All You Need",
+        "paper",
+        "arxiv",
+        "1706.03762",
+        {
+            "title": "Initial thoughts",
+            "content": "Groundbreaking paper introducing transformers.",
+        },
+    ),
+])
 ```
 
-Add a webpage:
+Add an additional identifier:
 
 ```python
-add_source(
-    title="Understanding Transformers",
-    type="webpage",
-    identifier_type="url",
-    identifier_value="https://example.com/transformers",
-)
+add_identifiers([
+    (
+        "Attention Is All You Need",
+        "paper",
+        "arxiv",
+        "1706.03762",
+        "semantic_scholar",
+        "204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+    ),
+])
 ```
 
-### 2. Note Taking
-
-Add notes to a source:
+Add notes:
 
 ```python
-add_note(
-    title="Attention Is All You Need",
-    type="paper",
-    identifier_type="arxiv",
-    identifier_value="1706.03762",
-    note_title="Implementation details",
-    note_content="The paper describes the architecture..."
-)
+add_notes([
+    (
+        "Attention Is All You Need",
+        "paper",
+        "arxiv",
+        "1706.03762",
+        "Implementation details",
+        "The paper describes the architecture...",
+    ),
+])
 ```
 
-### 3. Entity Linking
-
-Link source to entities:
+Link a source to an entity:
 
 ```python
-link_to_entity(
-    title="Attention Is All You Need",
-    type="paper",
-    identifier_type="arxiv",
-    identifier_value="1706.03762",
-    entity_name="transformer",
-    relation_type="introduces",
-    notes="First paper to introduce the transformer architecture"
-)
+link_to_entities([
+    (
+        "Attention Is All You Need",
+        "paper",
+        "arxiv",
+        "1706.03762",
+        "transformer",
+        "introduces",
+        "First paper to introduce the transformer architecture",
+    ),
+])
 ```
 
 Query sources by entity:
 
 ```python
-get_entity_sources(
-    entity_name="transformer",
-    type_filter="paper",
-    relation_filter="discusses"
-)
+get_entity_sources([
+    ("transformer", "paper", "discusses"),
+])
 ```
-
-## Best Practices
-
-1. Source Management
-
-   - Use consistent titles across references
-   - Provide as many identifiers as available
-   - Keep notes structured with clear titles
-   - Use appropriate source types
-
-2. Entity Linking
-   - Be specific with relation types
-   - Add contextual notes to relationships
-   - Verify entity names against memory graph
-   - Keep entity relationships focused
-
-## Technical Details
-
-1. Source Identification
-
-   - Internal UUID system for consistent referencing
-   - Multiple external identifiers per source
-   - Flexible identifier types (arxiv, doi, url, etc.)
-   - Title and type based fuzzy matching
-
-2. Data Organization
-   - Structured notes with titles
-   - Clear source type categorization
-   - Entity relationship tracking
-   - Status management
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new features
-4. Submit a pull request
