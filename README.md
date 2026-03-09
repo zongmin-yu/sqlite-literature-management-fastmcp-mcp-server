@@ -55,7 +55,7 @@ Notes:
 
 - The image defaults `SQLITE_DB_PATH` to `/data/sources.db`.
 - If the database file does not exist, the container initializes it from `create_sources_db.sql`.
-- If you are mounting an older database, apply `migrations/2026-03-09__normalize-identifiers.sql` before starting the server.
+- If you are mounting an older database, apply the required migrations under `migrations/` before starting the server.
 - This repo runs as a stdio MCP server, so there is no HTTP port to expose by default.
 
 With Docker Compose:
@@ -113,28 +113,48 @@ Supported identifier types:
 - `isbn`
 - `url`
 
+Supported entity relation types:
+
+- `discusses`
+- `introduces`
+- `extends`
+- `evaluates`
+- `applies`
+- `critiques`
+- `supports`
+- `contradicts`
+- `refutes`
+
 Lightweight provenance fields live on `sources`:
 
 - `provider`
 - `discovered_via`
 - `discovered_at`
 
-The schema now uses `PRAGMA user_version = 2`.
+The schema now uses `PRAGMA user_version = 3`.
 
 ## Migration
 
-If you have an older database, apply:
+If you have a version 0 or version 1 database, apply:
 
 ```bash
 sqlite3 /path/to/sources.db < migrations/2026-03-09__normalize-identifiers.sql
+sqlite3 /path/to/sources.db < migrations/2026-03-09__expand-entity-relation-types.sql
 ```
 
-That migration:
+If you already migrated to version 2, apply:
+
+```bash
+sqlite3 /path/to/sources.db < migrations/2026-03-09__expand-entity-relation-types.sql
+```
+
+These migrations:
 
 - adds `source_identifiers`
 - backfills identifier rows from the legacy JSON column
 - adds provenance fields
-- updates `PRAGMA user_version` to `2`
+- expands `source_entity_links.relation_type` to include `supports`, `contradicts`, and `refutes`
+- updates `PRAGMA user_version` to `3`
 
 The server checks `PRAGMA user_version` on connection and will reject older databases until they are migrated.
 

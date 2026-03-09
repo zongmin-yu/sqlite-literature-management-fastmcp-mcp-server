@@ -34,4 +34,7 @@ class EntityRelations:
         "evaluates",
         "applies",
         "critiques",
+        "supports",
+        "contradicts",
+        "refutes",
     }

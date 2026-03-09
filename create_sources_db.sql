@@ -23,7 +23,7 @@ CREATE TABLE source_notes (
 CREATE TABLE source_entity_links (
     source_id TEXT REFERENCES sources(id),
     entity_name TEXT,
-    relation_type TEXT CHECK(relation_type IN ('discusses', 'introduces', 'extends', 'evaluates', 'applies', 'critiques')),
+    relation_type TEXT CHECK(relation_type IN ('discusses', 'introduces', 'extends', 'evaluates', 'applies', 'critiques', 'supports', 'contradicts', 'refutes')),
     notes TEXT,
     PRIMARY KEY (source_id, entity_name)
 );
@@ -46,4 +46,4 @@ CREATE INDEX idx_entity_links_name ON source_entity_links(entity_name);
 CREATE INDEX idx_source_identifiers_source ON source_identifiers(source_id);
 CREATE INDEX idx_source_identifiers_lookup ON source_identifiers(identifier_type, normalized_value);
 
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;

@@ -3,7 +3,7 @@ import sqlite3
 from pathlib import Path
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 if "SQLITE_DB_PATH" not in os.environ:
@@ -46,8 +46,17 @@ class SQLiteConnection:
         cursor.execute("PRAGMA user_version")
         user_version = cursor.fetchone()[0]
         if user_version < SCHEMA_VERSION:
+            if user_version < 2:
+                migration_hint = (
+                    "Apply migrations/2026-03-09__normalize-identifiers.sql "
+                    "and then migrations/2026-03-09__expand-entity-relation-types.sql."
+                )
+            else:
+                migration_hint = (
+                    "Apply migrations/2026-03-09__expand-entity-relation-types.sql."
+                )
             raise ValueError(
                 "Database schema version "
                 f"{user_version} is outdated. Expected at least version {SCHEMA_VERSION}. "
-                "Apply migrations/2026-03-09__normalize-identifiers.sql."
+                f"{migration_hint}"
             )
