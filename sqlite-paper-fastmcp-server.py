@@ -1,12 +1,12 @@
+"""Temporary compatibility entrypoint until the modular package split lands."""
+
 from pathlib import Path
 import sqlite3
 import os
 import json
 import uuid
-from typing import List, Dict, Any, Optional, Tuple, Set, Union
+from typing import List, Dict, Any, Optional, Tuple, Union
 from fastmcp import FastMCP
-from datetime import datetime
-import re
 
 # Initialize FastMCP server
 mcp = FastMCP("Source Manager")
