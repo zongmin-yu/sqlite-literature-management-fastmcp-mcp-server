@@ -6,6 +6,31 @@ from .db import SQLiteConnection
 from .schema import SourceIdentifiers, SourceTypes
 
 
+def normalize_identifier_value(identifier_type: str, identifier_value: str) -> str:
+    del identifier_type
+    return identifier_value.strip().lower()
+
+
+def table_exists(conn, table_name: str) -> bool:
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT 1
+        FROM sqlite_master
+        WHERE type = 'table' AND name = ?
+        """,
+        [table_name],
+    )
+    return cursor.fetchone() is not None
+
+
+def source_exists(source_id: str, db_path: Path) -> bool:
+    with SQLiteConnection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM sources WHERE id = ?", [source_id])
+        return cursor.fetchone() is not None
+
+
 def search_sources(
     sources: List[Tuple[str, str, str, str]],
     db_path: Path,
@@ -15,6 +40,7 @@ def search_sources(
 
     with SQLiteConnection(db_path) as conn:
         cursor = conn.cursor()
+        has_normalized_identifiers = table_exists(conn, "source_identifiers")
 
         for title, type_, identifier_type, identifier_value in sources:
             if type_ not in SourceTypes.VALID_TYPES:
@@ -24,14 +50,31 @@ def search_sources(
                     f"Invalid identifier type. Must be one of: {SourceIdentifiers.VALID_TYPES}"
                 )
 
-            cursor.execute(
-                """
-                SELECT id FROM sources
-                WHERE type = ? AND
-                      json_extract(identifiers, ?) = ?
-                """,
-                [type_, f"$.{identifier_type}", identifier_value],
-            )
+            if has_normalized_identifiers:
+                cursor.execute(
+                    """
+                    SELECT s.id
+                    FROM sources s
+                    JOIN source_identifiers si ON s.id = si.source_id
+                    WHERE s.type = ?
+                      AND si.identifier_type = ?
+                      AND si.normalized_value = ?
+                    """,
+                    [
+                        type_,
+                        identifier_type,
+                        normalize_identifier_value(identifier_type, identifier_value),
+                    ],
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT id FROM sources
+                    WHERE type = ? AND
+                          json_extract(identifiers, ?) = ?
+                    """,
+                    [type_, f"$.{identifier_type}", identifier_value],
+                )
 
             result = cursor.fetchone()
             if result:
@@ -72,9 +115,17 @@ def get_sources_details(uuids: Union[str, List[str]], db_path: Path) -> List[Dic
     with SQLiteConnection(db_path) as conn:
         cursor = conn.cursor()
         placeholders = ",".join("?" * len(uuids))
+        cursor.execute(f"PRAGMA table_info(sources)")
+        source_columns = {row["name"] for row in cursor.fetchall()}
+        has_provenance = {"provider", "discovered_via", "discovered_at"}.issubset(source_columns)
+
+        selected_columns = ["id", "title", "type", "status", "identifiers"]
+        if has_provenance:
+            selected_columns.extend(["provider", "discovered_via", "discovered_at"])
+
         cursor.execute(
             f"""
-            SELECT id, title, type, status, identifiers
+            SELECT {', '.join(selected_columns)}
             FROM sources
             WHERE id IN ({placeholders})
             """,
@@ -87,16 +138,42 @@ def get_sources_details(uuids: Union[str, List[str]], db_path: Path) -> List[Dic
             missing_ids = [uuid for uuid in uuids if uuid not in found_ids]
             raise ValueError(f"Sources not found for UUIDs: {', '.join(missing_ids)}")
 
-        results = [
-            {
+        has_normalized_identifiers = table_exists(conn, "source_identifiers")
+
+        results = []
+        for source in sources:
+            source_data = {
                 "id": source["id"],
                 "title": source["title"],
                 "type": source["type"],
                 "status": source["status"],
                 "identifiers": json.loads(source["identifiers"]),
             }
-            for source in sources
-        ]
+            if has_provenance:
+                source_data["provider"] = source["provider"]
+                source_data["discovered_via"] = source["discovered_via"]
+                source_data["discovered_at"] = source["discovered_at"]
+            results.append(source_data)
+
+        if has_normalized_identifiers:
+            cursor.execute(
+                f"""
+                SELECT source_id, identifier_type, identifier_value
+                FROM source_identifiers
+                WHERE source_id IN ({placeholders})
+                ORDER BY is_primary DESC, identifier_type ASC
+                """,
+                uuids,
+            )
+            identifiers_by_source: Dict[str, Dict[str, str]] = {}
+            for row in cursor.fetchall():
+                identifiers_by_source.setdefault(row["source_id"], {})[row["identifier_type"]] = row[
+                    "identifier_value"
+                ]
+            for source_data in results:
+                source_data["identifiers"] = identifiers_by_source.get(
+                    source_data["id"], source_data["identifiers"]
+                )
 
         cursor.execute(
             f"""

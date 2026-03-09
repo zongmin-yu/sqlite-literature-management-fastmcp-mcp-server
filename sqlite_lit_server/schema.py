@@ -5,6 +5,8 @@ class SourceIdentifiers:
         "semantic_scholar",
         "arxiv",
         "doi",
+        "openalex",
+        "pmid",
         "isbn",
         "url",
     }

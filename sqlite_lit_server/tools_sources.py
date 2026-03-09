@@ -4,7 +4,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from .db import DB_PATH, SQLiteConnection
-from .repository import get_sources_details, search_sources
+from .repository import get_sources_details, normalize_identifier_value, search_sources
 from .schema import SourceIdentifiers, SourceStatus
 
 
@@ -102,6 +102,31 @@ def register_tools(mcp):
                             """,
                             notes_to_add,
                         )
+                    cursor.executemany(
+                        """
+                        INSERT INTO source_identifiers (
+                            source_id,
+                            identifier_type,
+                            identifier_value,
+                            normalized_value,
+                            is_primary
+                        )
+                        VALUES (:source_id, :identifier_type, :identifier_value, :normalized_value, :is_primary)
+                        """,
+                        [
+                            {
+                                "source_id": source["id"],
+                                "identifier_type": next(iter(json.loads(source["identifiers"]).keys())),
+                                "identifier_value": next(iter(json.loads(source["identifiers"]).values())),
+                                "normalized_value": normalize_identifier_value(
+                                    next(iter(json.loads(source["identifiers"]).keys())),
+                                    next(iter(json.loads(source["identifiers"]).values())),
+                                ),
+                                "is_primary": 1,
+                            }
+                            for source in sources_to_add
+                        ],
+                    )
                     conn.commit()
 
                     details_by_id = {
@@ -368,6 +393,27 @@ def register_tools(mcp):
                 cursor = conn.cursor()
                 try:
                     for update in updates_to_make:
+                        cursor.execute(
+                            """
+                            INSERT INTO source_identifiers (
+                                source_id,
+                                identifier_type,
+                                identifier_value,
+                                normalized_value,
+                                is_primary
+                            )
+                            VALUES (?, ?, ?, ?, 0)
+                            ON CONFLICT(source_id, identifier_type) DO UPDATE SET
+                                identifier_value = excluded.identifier_value,
+                                normalized_value = excluded.normalized_value
+                            """,
+                            (
+                                update["id"],
+                                update["new_type"],
+                                update["new_value"],
+                                normalize_identifier_value(update["new_type"], update["new_value"]),
+                            ),
+                        )
                         cursor.execute(
                             """
                             UPDATE sources

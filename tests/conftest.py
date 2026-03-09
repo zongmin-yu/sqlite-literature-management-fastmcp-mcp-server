@@ -23,10 +23,9 @@ def temp_db(tmp_path: Path) -> Path:
     return db_path
 
 
-@pytest.fixture
-def server_module(temp_db: Path, monkeypatch: pytest.MonkeyPatch):
+def _load_server_module(db_path: Path, monkeypatch: pytest.MonkeyPatch):
     module_name = "sqlite_paper_fastmcp_server_test"
-    monkeypatch.setenv("SQLITE_DB_PATH", str(temp_db))
+    monkeypatch.setenv("SQLITE_DB_PATH", str(db_path))
     sys.modules.pop(module_name, None)
     for name in list(sys.modules):
         if name == "sqlite_lit_server" or name.startswith("sqlite_lit_server."):
@@ -38,3 +37,16 @@ def server_module(temp_db: Path, monkeypatch: pytest.MonkeyPatch):
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture
+def load_server_module(monkeypatch: pytest.MonkeyPatch):
+    def loader(db_path: Path):
+        return _load_server_module(db_path, monkeypatch)
+
+    return loader
+
+
+@pytest.fixture
+def server_module(temp_db: Path, monkeypatch: pytest.MonkeyPatch):
+    return _load_server_module(temp_db, monkeypatch)
