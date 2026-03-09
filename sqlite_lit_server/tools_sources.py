@@ -50,7 +50,7 @@ def register_tools(mcp):
             if matches:
                 results[input_index] = {
                     "status": "error",
-                    "message": "Potential duplicates found. Please verify or use add_identifier if these are the same source.",
+                    "message": "Potential duplicates found. Please verify or use add_identifiers if these are the same source.",
                     "matches": matches,
                 }
                 continue

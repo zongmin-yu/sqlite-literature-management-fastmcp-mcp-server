@@ -150,9 +150,67 @@ The implementation is organized under `sqlite_lit_server/`:
 
 `sqlite-paper-fastmcp-server.py` remains as a thin compatibility shim.
 
-## Example Usage
+## Batch Import Sources
 
-Add a source:
+`add_sources` is the batch import entrypoint for new sources. It accepts one argument named `sources`, where each item is:
+
+```text
+[title, source_type, identifier_type, identifier_value, initial_note]
+```
+
+`initial_note` must be either `null` or an object with both `title` and `content`.
+
+Supported `source_type` values:
+
+- `paper`
+- `webpage`
+- `book`
+- `video`
+- `blog`
+
+Supported `identifier_type` values:
+
+- `semantic_scholar`
+- `doi`
+- `arxiv`
+- `openalex`
+- `pmid`
+- `isbn`
+- `url`
+
+Duplicate handling:
+
+- Exact identifier matches return `Source already exists` together with the existing source payload.
+- Title-based fuzzy matches return `Potential duplicates found. Please verify or use add_identifiers if these are the same source.`
+- Successful batch writes return one result per input item in the same order as the request.
+
+Example MCP/JSON payload:
+
+```json
+{
+  "sources": [
+    [
+      "Attention Is All You Need",
+      "paper",
+      "arxiv",
+      "1706.03762",
+      {
+        "title": "Initial thoughts",
+        "content": "Transformers start here."
+      }
+    ],
+    [
+      "OpenAlex Import",
+      "paper",
+      "openalex",
+      "W1234567890",
+      null
+    ]
+  ]
+}
+```
+
+Example Python call:
 
 ```python
 add_sources([
@@ -163,11 +221,31 @@ add_sources([
         "1706.03762",
         {
             "title": "Initial thoughts",
-            "content": "Groundbreaking paper introducing transformers.",
+            "content": "Transformers start here.",
         },
+    ),
+    (
+        "OpenAlex Import",
+        "paper",
+        "openalex",
+        "W1234567890",
+        None,
     ),
 ])
 ```
+
+The same tool payloads work whether you start the server locally or through Docker with `docker compose run --rm sqlite-lit-mcp`.
+
+## Batch Write Conventions
+
+Plural write tools accept lists and return a per-input result list in the same order. Related batch tools include:
+
+- `add_notes`
+- `add_identifiers`
+- `update_status`
+- `link_to_entities`
+
+## Example Usage
 
 Add another identifier:
 
