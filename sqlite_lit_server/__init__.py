@@ -1,13 +1,4 @@
-"""Compatibility entrypoint for the modular sqlite_lit_server package."""
-
-import sys
-from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-from sqlite_lit_server import (
+from .app import (
     DB_PATH,
     EntityRelations,
     SQLiteConnection,
@@ -60,7 +51,3 @@ __all__ = [
     "update_status",
     "vacuum_database",
 ]
-
-
-if __name__ == "__main__":
-    mcp.run()

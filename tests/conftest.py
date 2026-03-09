@@ -28,6 +28,9 @@ def server_module(temp_db: Path, monkeypatch: pytest.MonkeyPatch):
     module_name = "sqlite_paper_fastmcp_server_test"
     monkeypatch.setenv("SQLITE_DB_PATH", str(temp_db))
     sys.modules.pop(module_name, None)
+    for name in list(sys.modules):
+        if name == "sqlite_lit_server" or name.startswith("sqlite_lit_server."):
+            sys.modules.pop(name, None)
 
     spec = importlib.util.spec_from_file_location(module_name, MODULE_PATH)
     module = importlib.util.module_from_spec(spec)
